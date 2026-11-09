@@ -84,3 +84,28 @@
 | 16 | **Holistic Windowed LLM (Qwen2.5-7B-Instruct (Q6_K))** | Era 4: Holistic Zero-Shot LLM | **51.61%** | 38.1 / 80.0 | **26.39%** | 0.0% | 34.38% | 48.30% | 48.74% | 77.45% | 25.9s |
 | 17 | **Holistic Windowed LLM (LFM3-1.7B (Q8_0))** | Era 4: Holistic Zero-Shot LLM | **47.22%** | 53.1 / 42.5 | **21.74%** | 0.0% | 35.48% | 42.68% | 52.21% | 66.99% | 6.4s |
 | 18 | **Holistic Windowed LLM (Gemma-4-E2B-IT (Q5_K_M))** | Era 4: Holistic Zero-Shot LLM | **42.31%** | 91.7 / 27.5 | **19.44%** | 0.0% | 37.64% | 40.29% | 34.25% | 41.74% | 6.2s |
+
+---
+
+## 4. Full 15-Packet Test Suite Tournament (270 pgs Poly, 296 pgs Mono)
+* Evaluated using production `pss_pipeline.py` with OpenInference telemetry and `v2_anti_split` prompt.
+* Comparing Single Laptop (Gemma-4-E4B) vs. Distributed Dual-PC Cluster (Gemma-26B MoE over WSL2 RPC).
+
+### A. `DocSplit-Poly-Seq` (15 Test Packets | 90 Documents | 270 Pages)
+
+| Model & Mode | Boundary F1 (%) | Precision / Recall (%) | Doc Exact F1 (%) | Packet STP (%) | $P_k$ Err (%) ↓ | WindowDiff (%) ↓ | FP / FN | Time (s) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Distributed Gemma-26B MoE (Hybrid, $\tau=0.02$)** | **81.20%** | **93.10%** / 72.00% | 65.03% | **20.0%** (3/15) | 13.70% | 18.95% | **4** / 21 | 489.5s |
+| **Gemma-4-E4B-IT (Hybrid, $\tau=0.02$)** | 80.30% | 92.98% / 70.67% | **66.67%** | 13.3% (2/15) | 13.06% | **18.03%** | **4** / 22 | 230.8s |
+| **Gemma-4-E4B-IT (Always-LLM Ceiling)** | **84.66%** | 78.41% / **92.00%** | **67.36%** | 13.3% (2/15) | **12.06%** | 19.58% | 19 / **6** | 503.9s |
+| *Fast Heuristic Baseline (CPU Rules+GBDT)* | *19.28%* | *100.0% / 10.67%* | *8.85%* | *0.0%* | *45.86%* | *45.86%* | *0 / 67* | *2.0s* |
+
+### B. `DocSplit-Mono-Seq` (15 Test Packets | 75 Documents | 296 Pages — Hardest Benchmark)
+
+| Model & Mode | Boundary F1 (%) | Precision / Recall (%) | Doc Exact F1 (%) | Packet STP (%) | $P_k$ Err (%) ↓ | WindowDiff (%) ↓ | FP / FN | Time (s) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Distributed Gemma-26B MoE (Hybrid, $\tau=0.02$)** 🏆 | **74.38%** 🚀 | **73.77%** / **75.00%** | **50.33%** 🏆 | **13.3%** (2/15) | **14.60%** | **21.56%** | 16 / **15** | 563.9s |
+| **Gemma-4-E4B-IT (Hybrid, $\tau=0.02$)** | 71.79% | 73.68% / 70.00% | 48.98% | 6.7% (1/15) | 16.72% | 23.89% | **15** / 18 | 174.0s |
+| **Gemma-4-E4B-IT (Always-LLM Ceiling)** | 71.23% | 60.47% / 86.67% | 50.00% | 6.7% (1/15) | 16.67% | 27.20% | 34 / 8 | 449.7s |
+| *Fast Heuristic Baseline (CPU Rules+GBDT)* | *6.06%* | *33.33% / 3.33%* | *2.08%* | *0.0%* | *49.03%* | *49.92%* | *4 / 58* | *2.1s* |
+
