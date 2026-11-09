@@ -75,6 +75,20 @@ LOCAL_MODELS_REGISTRY = {
         "vram_mb": 7500,
         "rpc": "192.168.1.91:50052",
     },
+    "nuextract-v1.5": {
+        "name": "NuExtract-v1.5 (Q4_K_M)",
+        "file": "NuExtract-v1.5-Q4_K_M.gguf",
+        "ctx": 4096,
+        "gpu_layers": 99,
+        "vram_mb": 2900,
+    },
+    "nuextract-tiny": {
+        "name": "NuExtract-tiny (Q8_0)",
+        "file": "nuextract-tiny-q8.gguf",
+        "ctx": 4096,
+        "gpu_layers": 99,
+        "vram_mb": 1450,
+    },
 }
 
 DEFAULT_CLAIM_CATEGORIES = [
@@ -602,6 +616,25 @@ class LocalLlamaServerManager:
         except Exception as e:
             return f"ERROR: {e}"
 
+    def completion(self, prompt: str, stop: Optional[List[str]] = None, max_tokens: int = 150) -> str:
+        """Sends raw completion to local server (for structured extraction models like NuExtract)."""
+        import requests
+        url = f"http://127.0.0.1:{self.port}/completion"
+        payload = {
+            "prompt": prompt,
+            "temperature": 0.0,
+            "n_predict": max_tokens,
+            "stream": False,
+        }
+        if stop:
+            payload["stop"] = stop
+        try:
+            r = requests.post(url, json=payload, timeout=30)
+            r.raise_for_status()
+            return r.json().get("content", "").strip()
+        except Exception as e:
+            return f"ERROR: {e}"
+
     def stop(self):
         """Stops local llama-server."""
         if self.proc:
@@ -618,6 +651,33 @@ class LocalLlamaServerManager:
             except Exception:
                 pass
             self.log_file = None
+
+
+def parse_nuextract_json(raw: str) -> Dict[str, Any]:
+    """Parses raw completion output from NuExtract into structured dict."""
+    if not raw or raw.startswith("ERROR:"):
+        return {}
+    if raw.startswith("```json"):
+        raw = raw[7:]
+    if raw.startswith("```"):
+        raw = raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    raw = raw.strip()
+    try:
+        decoder = json.JSONDecoder()
+        parsed, _ = decoder.raw_decode(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {}
 
 
 # ============================================================================
@@ -662,6 +722,7 @@ class PssPipelineSegmenter:
         mode: str = "hybrid",
         always_llm: bool = False,
         server: Optional[LocalLlamaServerManager] = None,
+        stage15_server: Optional[LocalLlamaServerManager] = None,
         ground_truth_starts: Optional[Set[int]] = None,
     ) -> List[Dict[str, Any]]:
         """Processes a packet through the 4-stage pipeline."""
@@ -678,6 +739,8 @@ class PssPipelineSegmenter:
 
         transitions = []
         run_len = 1
+        active_doc_title = ""
+        active_doc_id = ""
 
         for i in range(1, n):
             sp, sc = sigs[i - 1], sigs[i]
@@ -776,20 +839,75 @@ class PssPipelineSegmenter:
 
                 # High confidence continuation from GBDT
                 if p_gbdt < self.threshold_low:
-                    t_record = {
-                        "from_page": from_pg,
-                        "to_page": to_pg,
-                        "split": False,
-                        "prob": round(p_gbdt, 4),
-                        "reason": f"GBDT strong layout continuation (P={p_gbdt:.3f})",
-                        "stage": "STAGE_3_SPATIAL_GBDT",
-                        "rule": "gbdt_strong_continue",
-                        "doc_type_id": None,
-                    }
-                    transitions.append(t_record)
-                    self._record_telemetry(packet_id, from_pg, to_pg, t_record, sp, sc, gt_split)
-                    run_len += 1
-                    continue
+                    escalated_to_llm = False
+                    # Stage 1.5: NuExtract Semantic Discontinuity Gate
+                    if stage15_server is not None:
+                        first_line_curr = sc["full_text"].strip().splitlines()[0].strip() if sc["full_text"].strip().splitlines() else ""
+                        starts_one = (first_line_curr in ["1", "- 1 -", "1.", "Page 1", "PAGE 1"] or first_line_curr.startswith("1 "))
+                        top_clean = sc["top_text"].replace("\xa0", " ").lower()
+                        letterhead_kw = ("attorney", "county", "board of", "commissioners", "from:", "published:", "committee", "session", "memorandum", "questionnaire", "specification", "invoice", "statement", "agreement")
+                        has_letterhead = any(w in top_clean for w in letterhead_kw)
+
+                        trigger_stage15 = (
+                            sc["has_title_trigger"]
+                            or starts_one
+                            or has_letterhead
+                            or sp["has_closing_trigger"]
+                            or sc["centered_top_lines"] > 0
+                        )
+
+                        if trigger_stage15:
+                            schema = {"document_title": "", "document_id": ""}
+                            schema_str = json.dumps(schema, indent=4)
+                            stop_tokens = ["<|input|>", "<|endoftext|>", "### Text:"]
+                            clean_prev = sp["full_text"][:1200].replace("\xa0", " ").replace("\u2010", "-")
+                            clean_curr = sc["full_text"][:1200].replace("\xa0", " ").replace("\u2010", "-")
+                            p_prev = f"<|input|>\n### Template:\n{schema_str}\n### Text:\n{clean_prev}\n\n<|output|>\n"
+                            p_curr = f"<|input|>\n### Template:\n{schema_str}\n### Text:\n{clean_curr}\n\n<|output|>\n"
+
+                            res_prev = parse_nuextract_json(stage15_server.completion(p_prev, stop=stop_tokens, max_tokens=100))
+                            res_curr = parse_nuextract_json(stage15_server.completion(p_curr, stop=stop_tokens, max_tokens=100))
+
+                            t_prev = (res_prev.get("document_title") or "").strip().lower()
+                            t_curr = (res_curr.get("document_title") or "").strip().lower()
+                            id_p = (res_prev.get("document_id") or "").strip().lower()
+                            id_c = (res_curr.get("document_id") or "").strip().lower()
+
+                            is_same_as_active = bool(
+                                (t_curr and active_doc_title and t_curr == active_doc_title)
+                                or (id_c and active_doc_id and id_c == active_doc_id)
+                            )
+
+                            if not is_same_as_active:
+                                new_title = bool(t_curr and t_curr != t_prev and (not active_doc_title or t_curr != active_doc_title))
+                                new_id = bool(id_c and id_c != id_p and len(id_c) >= 3 and not id_c.isdigit() and (not active_doc_id or id_c != active_doc_id))
+
+                                if new_title or new_id:
+                                    reason_str = f"NuExtract title shift ('{t_prev or active_doc_title}' -> '{t_curr}')" if new_title else f"NuExtract doc_id shift ('{id_p or active_doc_id}' -> '{id_c}')"
+                                    # Escalate to Stage 4 LLM Adjudicator (override GBDT short-circuit)
+                                    p_gbdt = 0.50
+                                    escalated_to_llm = True
+                            else:
+                                if t_curr and not active_doc_title:
+                                    active_doc_title = t_curr
+                                if id_c and not active_doc_id:
+                                    active_doc_id = id_c
+
+                    if not escalated_to_llm:
+                        t_record = {
+                            "from_page": from_pg,
+                            "to_page": to_pg,
+                            "split": False,
+                            "prob": round(p_gbdt, 4),
+                            "reason": f"GBDT strong layout continuation (P={p_gbdt:.3f})",
+                            "stage": "STAGE_3_SPATIAL_GBDT",
+                            "rule": "gbdt_strong_continue",
+                            "doc_type_id": None,
+                        }
+                        transitions.append(t_record)
+                        self._record_telemetry(packet_id, from_pg, to_pg, t_record, sp, sc, gt_split)
+                        run_len += 1
+                        continue
 
             # Fallback if server is not available
             if server is None:
@@ -1138,6 +1256,18 @@ def main():
         default=0.80,
         help="Upper GBDT boundary threshold (P > high => SPLIT)",
     )
+    parser.add_argument(
+        "--enable-stage15-nuextract",
+        action="store_true",
+        help="Enable Stage 1.5 NuExtract Semantic Discontinuity Gate to rescue same-category False Negatives",
+    )
+    parser.add_argument(
+        "--stage15-model",
+        type=str,
+        default="nuextract-v1.5",
+        choices=["nuextract-v1.5", "nuextract-tiny"],
+        help="Model key for Stage 1.5 NuExtract gate (default: 'nuextract-v1.5')",
+    )
 
     # Testing & Slicing Options
     parser.add_argument(
@@ -1252,6 +1382,12 @@ def main():
 
         server = LocalLlamaServerManager(model_cfg, port=8080)
 
+    # Resolve Stage 1.5 NuExtract Server if enabled
+    stage15_server = None
+    if args.enable_stage15_nuextract:
+        stage15_cfg = dict(LOCAL_MODELS_REGISTRY.get(args.stage15_model, LOCAL_MODELS_REGISTRY["nuextract-v1.5"]))
+        stage15_server = LocalLlamaServerManager(stage15_cfg, port=8081)
+
     # Load Data
     if args.dataset:
         packets, desc = DatasetRegistry.load_dataset(
@@ -1291,6 +1427,8 @@ def main():
     try:
         if server is not None:
             server.start()
+        if stage15_server is not None:
+            stage15_server.start()
 
         for idx, pkt in enumerate(packets):
             pkt_id = pkt.get("packet_id", f"pkt_{idx+1}")
@@ -1314,6 +1452,7 @@ def main():
                 mode=args.mode,
                 always_llm=is_always_llm,
                 server=server,
+                stage15_server=stage15_server,
                 ground_truth_starts=gt_starts,
             )
             pkt_time = time.perf_counter() - t0_pkt
@@ -1325,6 +1464,8 @@ def main():
     finally:
         if server is not None:
             server.stop()
+        if stage15_server is not None:
+            stage15_server.stop()
 
     total_time = time.perf_counter() - t0_total
 
@@ -1354,6 +1495,8 @@ def main():
                 "model": args.model,
                 "prompt_version": segmenter.prompt_version,
                 "prompt_file": str(args.prompt) if args.prompt else None,
+                "enable_stage15_nuextract": args.enable_stage15_nuextract,
+                "stage15_model": args.stage15_model if args.enable_stage15_nuextract else None,
                 "thresholds": {"low": args.threshold_low, "high": args.threshold_high},
                 "total_time_seconds": round(total_time, 2),
                 "metrics": metrics,
