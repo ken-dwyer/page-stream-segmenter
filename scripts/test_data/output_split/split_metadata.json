@@ -1,0 +1,99 @@
+{
+  "source_pdf": "C:\\Users\\kdd13\\Projects\\llm-local-bench\\scripts\\test_data\\sample_multi_doc_packet.pdf",
+  "total_pages": 7,
+  "detected_documents_count": 3,
+  "mode": "fast",
+  "processing_seconds": 0.095,
+  "subdocuments": [
+    {
+      "doc_index": 1,
+      "title_summary": "Document",
+      "start_page": 1,
+      "end_page": 3,
+      "page_count": 3,
+      "page_ordinals": [
+        1,
+        2,
+        3
+      ],
+      "detected_identifiers": []
+    },
+    {
+      "doc_index": 2,
+      "title_summary": "333 SOUTH GRAND AVENUE \u2022 PO BOX 30 195 \u2022 LANSING , MICHIGAN ",
+      "start_page": 4,
+      "end_page": 5,
+      "page_count": 2,
+      "page_ordinals": [
+        4,
+        5
+      ],
+      "detected_identifiers": [
+        "2021",
+        "517-241"
+      ]
+    },
+    {
+      "doc_index": 3,
+      "title_summary": "Document",
+      "start_page": 6,
+      "end_page": 7,
+      "page_count": 2,
+      "page_ordinals": [
+        6,
+        7
+      ],
+      "detected_identifiers": []
+    }
+  ],
+  "transitions": [
+    {
+      "from_page": 1,
+      "to_page": 2,
+      "split": false,
+      "prob": 0.0026,
+      "reason": "Strong semantic/visual continuation | Preceding page whitespace (100%)",
+      "mode": "30f_gbdt_model"
+    },
+    {
+      "from_page": 2,
+      "to_page": 3,
+      "split": false,
+      "prob": 0.0004,
+      "reason": "Strong semantic/visual continuation | Preceding page whitespace (100%)",
+      "mode": "30f_gbdt_model"
+    },
+    {
+      "from_page": 3,
+      "to_page": 4,
+      "split": true,
+      "prob": 0.9908,
+      "reason": "High spatial/layout discontinuity | Preceding page whitespace (100%)",
+      "mode": "30f_gbdt_model"
+    },
+    {
+      "from_page": 4,
+      "to_page": 5,
+      "split": false,
+      "prob": 0.05,
+      "reason": "Explicit continuation page number (2)",
+      "mode": "deterministic_rule"
+    },
+    {
+      "from_page": 5,
+      "to_page": 6,
+      "split": true,
+      "prob": 0.5678,
+      "reason": "Subtle layout boundary",
+      "mode": "30f_gbdt_model"
+    },
+    {
+      "from_page": 6,
+      "to_page": 7,
+      "split": false,
+      "prob": 0.0026,
+      "reason": "Strong semantic/visual continuation | Preceding page whitespace (100%)",
+      "mode": "30f_gbdt_model"
+    }
+  ]
+}
