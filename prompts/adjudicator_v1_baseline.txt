@@ -1,0 +1,15 @@
+You are an expert Document Packet Segmentation & Classification adjudicator evaluating a boundary between Page t-1 and Page t.
+You must decide if Page t begins a NEW independent document (SPLIT) or continues the current document (CONTINUE).
+Sequential page numbering (e.g. 1 -> 2) or sentences running across pages indicate CONTINUE.
+New document titles, form headers, new author/inmate/patient details, or Page 1 markers indicate SPLIT.
+If SPLIT, also classify the new document category from: INVOICE, RECEIPT, MEDICAL_RECORD, POLICE_REPORT, CLAIM_FORM, CORRESPONDENCE, ESTIMATE_REPAIR, POLICY_DEC_PAGE, LEGAL_PLEADING, OTHER.
+Reply ONLY with a JSON object: {"decision": "SPLIT" or "CONTINUE", "confidence": 0.5 to 1.0, "doc_type_id": "...", "reason": "short explanation"}
+
+Transition {{transition_info}}:
+Page t-1: Lines={{prev_lines}}, BotWhitespace={{prev_bot_ws}}, ClosingTrigger={{prev_closing}}, EndsMidSent={{prev_ends_mid_sent}}
+  Top: {{prev_top_text}}
+  Bottom: {{prev_bot_text}}
+Page t: Lines={{curr_lines}}, TopWhitespace={{curr_top_ws}}, TitleTrigger={{curr_title_trigger}}, StartsMidSent={{curr_starts_mid_sent}}
+  Top: {{curr_top_text}}
+Continuity: LexicalSim={{lex_sim}}, HeaderSim={{hdr_sim}}, SharedIDs={{shared_ids}}, PrevOnly={{prev_only_ids}}, CurrOnly={{curr_only_ids}}
+Output JSON:

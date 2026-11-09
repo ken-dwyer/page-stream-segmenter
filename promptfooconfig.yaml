@@ -1,0 +1,129 @@
+description: "Page Stream Segmentation: Prompt Adjudicator Benchmark (v1 vs v2)"
+
+prompts:
+  - file://prompts/adjudicator_v1_baseline.txt
+  - file://prompts/adjudicator_v2_anti_split.txt
+
+providers:
+  - id: openai:chat:gemma-4-e4b
+    config:
+      apiBaseUrl: http://127.0.0.1:8080/v1
+      apiKey: none
+      temperature: 0.0
+      max_tokens: 150
+
+tests:
+  - description: "Case 1 (True Split): Inmate Medication Form starts new document without page numbers"
+    vars:
+      transition_info: "Page 4 -> Page 5 (docsplit_mono_seq_form_15)"
+      prev_lines: 40
+      prev_bot_ws: 0.09
+      prev_closing: "False"
+      prev_ends_mid_sent: "False"
+      prev_top_text: "'INMATE GRIEVANCE APPEAL FORM - PAGE 4 ...'"
+      prev_bot_text: "'5. You may write comments about the violation(s) if you feel explanation would be helpful.'"
+      curr_lines: 35
+      curr_top_ws: 0.05
+      curr_title_trigger: "True"
+      curr_starts_mid_sent: "False"
+      curr_top_text: "'INMATE MEDICATION INFORMATION FORM INMATE INFORMATION FULL LEGAL NAME OF INMATE: _________'"
+      lex_sim: 0.04
+      hdr_sim: 0.00
+      shared_ids: "[]"
+      prev_only_ids: "['GRIEV-2021-99']"
+      curr_only_ids: "['MED-FORM-A']"
+    assert:
+      - type: icontains
+        value: "SPLIT"
+
+  - description: "Case 2 (True Continuation): Multi-page Invoice continuation with repeated header and same Invoice ID"
+    vars:
+      transition_info: "Page 2 -> Page 3 (docsplit_mono_seq_invoice_05)"
+      prev_lines: 38
+      prev_bot_ws: 0.08
+      prev_closing: "False"
+      prev_ends_mid_sent: "True"
+      prev_top_text: "'ACME MEDICAL SUPPLIES - INVOICE #INV-88912 ...'"
+      prev_bot_text: "'Item 14: Surgical gloves, latex-free, 10 boxes @ $12.50 = $125.00'"
+      curr_lines: 42
+      curr_top_ws: 0.05
+      curr_title_trigger: "True"
+      curr_starts_mid_sent: "False"
+      curr_top_text: "'ACME MEDICAL SUPPLIES - INVOICE #INV-88912 (CONTINUED) ITEMIZED CHARGES'"
+      lex_sim: 0.45
+      hdr_sim: 0.82
+      shared_ids: "['INV-88912']"
+      prev_only_ids: "[]"
+      curr_only_ids: "[]"
+    assert:
+      - type: icontains
+        value: "CONTINUE"
+
+  - description: "Case 3 (True Continuation): Internal Form Subheading ('SECTION B: MEDICAL HISTORY') within same form"
+    vars:
+      transition_info: "Page 1 -> Page 2 (Claim Form Part 2)"
+      prev_lines: 45
+      prev_bot_ws: 0.04
+      prev_closing: "False"
+      prev_ends_mid_sent: "False"
+      prev_top_text: "'STATE WORKERS COMPENSATION BOARD - EMPLOYEE CLAIM (FORM C-3)'"
+      prev_bot_text: "'Signature of Claimant: Jane Doe Date: 10/14/2023'"
+      curr_lines: 38
+      curr_top_ws: 0.06
+      curr_title_trigger: "True"
+      curr_starts_mid_sent: "False"
+      curr_top_text: "'SECTION B: MEDICAL TREATMENT AND DOCTOR INFORMATION - FORM C-3'"
+      lex_sim: 0.38
+      hdr_sim: 0.55
+      shared_ids: "['WCB#99281', 'Jane Doe']"
+      prev_only_ids: "[]"
+      curr_only_ids: "[]"
+    assert:
+      - type: icontains
+        value: "CONTINUE"
+
+  - description: "Case 4 (True Split): New Claimant / Police Accident Report following Claim Form"
+    vars:
+      transition_info: "Page 3 -> Page 4 (Form to Police Report)"
+      prev_lines: 30
+      prev_bot_ws: 0.45
+      prev_closing: "True"
+      prev_ends_mid_sent: "False"
+      prev_top_text: "'FORM C-3 CONTINUATION - SECTION C ...'"
+      prev_bot_text: "'STATE OF NEW YORK NOTARY PUBLIC SEAL ... Subscribed and sworn to before me.'"
+      curr_lines: 50
+      curr_top_ws: 0.04
+      curr_title_trigger: "True"
+      curr_starts_mid_sent: "False"
+      curr_top_text: "'NEW YORK STATE POLICE ACCIDENT REPORT MV-104A CASE #2023-88192'"
+      lex_sim: 0.02
+      hdr_sim: 0.00
+      shared_ids: "[]"
+      prev_only_ids: "['WCB#99281']"
+      curr_only_ids: "['MV-104A-992']"
+    assert:
+      - type: icontains
+        value: "SPLIT"
+
+  - description: "Case 5 (True Continuation): Sentence wrapping across pages with dense text"
+    vars:
+      transition_info: "Page 6 -> Page 7 (Legal Pleading)"
+      prev_lines: 48
+      prev_bot_ws: 0.02
+      prev_closing: "False"
+      prev_ends_mid_sent: "True"
+      prev_top_text: "'IN THE SUPREME COURT OF THE STATE OF NEW YORK ...'"
+      prev_bot_text: "'The Defendant contends that under Section 12-b of the statutory guidelines, the claimant is not entitled to'"
+      curr_lines: 46
+      curr_top_ws: 0.03
+      curr_title_trigger: "False"
+      curr_starts_mid_sent: "True"
+      curr_top_text: "'receive redundant benefits when preexisting coverage is verified by the primary carrier.'"
+      lex_sim: 0.28
+      hdr_sim: 0.10
+      shared_ids: "['Index #2023-1129']"
+      prev_only_ids: "[]"
+      curr_only_ids: "[]"
+    assert:
+      - type: icontains
+        value: "CONTINUE"
