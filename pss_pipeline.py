@@ -67,6 +67,14 @@ LOCAL_MODELS_REGISTRY = {
         "gpu_layers": 99,
         "vram_mb": 6200,
     },
+    "gemma-26b": {
+        "name": "Gemma-4-26B-A4B-IT-MoE (UD-IQ3_S)",
+        "file": "gemma-4-26B-A4B-it-UD-IQ3_S.gguf",
+        "ctx": 4096,
+        "gpu_layers": 99,
+        "vram_mb": 7500,
+        "rpc": "192.168.1.91:50052",
+    },
 }
 
 DEFAULT_CLAIM_CATEGORIES = [
@@ -488,16 +496,38 @@ def extract_30f_pairwise_vector(
 
 
 # ============================================================================
-# 4. STAGE 4: LOCAL ADJUDICATOR & DOCUMENT CLASSIFIER (Zero Distributed RPC)
+# 4. STAGE 4: LOCAL ADJUDICATOR & DOCUMENT CLASSIFIER (Zero Distributed RPC or Multi-GPU RPC)
 # ============================================================================
 
+def ensure_remote_rpc(rpc_endpoint: str = "192.168.1.91:50052") -> None:
+    """Verifies or launches remote ggml-rpc-server on worker node."""
+    import socket
+    try:
+        host, port_str = rpc_endpoint.split(":")
+        port = int(port_str)
+        s = socket.socket()
+        s.settimeout(2)
+        s.connect((host, port))
+        s.close()
+        print(f"[Cluster] Remote RPC daemon on {rpc_endpoint} is ALIVE and reachable!", flush=True)
+        return
+    except Exception:
+        pass
+
+    print(f"[Cluster] Starting remote RPC daemon on {rpc_endpoint} via SSH...", flush=True)
+    start_cmd = "ssh -o BatchMode=yes hpenvy '~/start-rpc.sh'"
+    subprocess.run(start_cmd, shell=True, check=False)
+    time.sleep(3)
+
+
 class LocalLlamaServerManager:
-    """Manages local llama-server on a single laptop GPU (RTX 4060, 8GB VRAM)."""
+    """Manages local llama-server on single laptop GPU or distributed dual-PC cluster."""
 
     def __init__(self, model_config: Dict[str, Any], port: int = 8080):
         self.config = model_config
         self.port = port
         self.proc: Optional[subprocess.Popen] = None
+        self.log_file = None
 
     def start(self):
         """Starts local llama-server process."""
@@ -523,16 +553,26 @@ class LocalLlamaServerManager:
             "--reasoning-format", "none",
         ]
 
-        print(f"[LocalServer] Starting {self.config['name']} on 127.0.0.1:{self.port} (Single Laptop RTX 4060)...")
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        rpc_server = self.config.get("rpc")
+        if rpc_server:
+            ensure_remote_rpc(rpc_server)
+            cmd.extend(["--rpc", rpc_server])
+
+        log_path = ROOT_DIR / "results" / "server_llama.log"
+        self.log_file = log_path.open("w", encoding="utf-8")
+
+        print(f"[LocalServer] Starting {self.config['name']} on 127.0.0.1:{self.port} (RPC: {rpc_server or 'None'})...")
+        self.proc = subprocess.Popen(cmd, stdout=self.log_file, stderr=subprocess.STDOUT)
 
         # Wait for readiness
         import requests
         url = f"http://127.0.0.1:{self.port}/health"
-        t0 = time.time()
-        while time.time() - t0 < 60:
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError(f"llama-server terminated prematurely during startup! Check {log_path}")
             try:
-                r = requests.get(url, timeout=1)
+                r = requests.get(url, timeout=2)
                 if r.status_code == 200:
                     print(f"[LocalServer] {self.config['name']} is READY!")
                     return
@@ -540,7 +580,7 @@ class LocalLlamaServerManager:
                 pass
             time.sleep(1)
 
-        raise TimeoutError(f"Local server failed to start within 60s on port {self.port}")
+        raise TimeoutError(f"Local server failed to start within 180s on port {self.port}")
 
     def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 150) -> str:
         """Sends chat completion to local server."""
@@ -555,7 +595,7 @@ class LocalLlamaServerManager:
             "max_tokens": max_tokens,
         }
         try:
-            r = requests.post(url, json=payload, timeout=45)
+            r = requests.post(url, json=payload, timeout=60)
             r.raise_for_status()
             msg = r.json()["choices"][0]["message"]
             return msg.get("content") or msg.get("reasoning_content") or ""
@@ -572,6 +612,12 @@ class LocalLlamaServerManager:
             except Exception:
                 self.proc.kill()
             self.proc = None
+        if self.log_file:
+            try:
+                self.log_file.close()
+            except Exception:
+                pass
+            self.log_file = None
 
 
 # ============================================================================
@@ -1072,7 +1118,13 @@ def main():
         "--model",
         type=str,
         default="gemma-4-e4b",
-        help="Stage 4 LLM model key ('gemma-4-e4b', 'gemma-4-e2b', 'lfm3-1.7b', 'qwen2.5-7b') or custom GGUF path",
+        help="Stage 4 LLM model key ('gemma-4-e4b', 'gemma-4-e2b', 'lfm3-1.7b', 'qwen2.5-7b', 'gemma-26b') or custom GGUF path",
+    )
+    parser.add_argument(
+        "--rpc",
+        type=str,
+        default=None,
+        help="Remote RPC endpoint for distributed multi-GPU serving (e.g. '192.168.1.91:50052')",
     )
     parser.add_argument(
         "--threshold-low",
@@ -1184,14 +1236,20 @@ def main():
     # Resolve Stage 4 Server if in Hybrid or Always-LLM Mode
     server = None
     if args.mode in ("hybrid", "llm") or is_always_llm:
-        model_cfg = LOCAL_MODELS_REGISTRY.get(args.model)
-        if model_cfg is None:
+        raw_cfg = LOCAL_MODELS_REGISTRY.get(args.model)
+        if raw_cfg is None:
             # Custom GGUF path fallback
             p = Path(args.model)
             if p.exists():
                 model_cfg = {"name": p.stem, "file": p.name, "ctx": 4096, "gpu_layers": 99}
             else:
-                model_cfg = LOCAL_MODELS_REGISTRY["gemma-4-e4b"]
+                model_cfg = dict(LOCAL_MODELS_REGISTRY["gemma-4-e4b"])
+        else:
+            model_cfg = dict(raw_cfg)
+
+        if args.rpc:
+            model_cfg["rpc"] = args.rpc
+
         server = LocalLlamaServerManager(model_cfg, port=8080)
 
     # Load Data
