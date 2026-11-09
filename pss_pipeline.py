@@ -287,6 +287,7 @@ class PhoenixTracer:
                     span.set_attribute("decision_stage", stage)
                     span.set_attribute("outcome_class", outcome)
                     span.set_attribute("is_error", is_error)
+                    span.set_attribute("prompt_version", str(trace_record.get("prompt_version", "v1_baseline")))
 
                     if pred.get("doc_type_id"):
                         span.set_attribute("doc_type_id", str(pred["doc_type_id"]))
@@ -545,7 +546,7 @@ class LocalLlamaServerManager:
         """Sends chat completion to local server."""
         import requests
         url = f"http://127.0.0.1:{self.port}/v1/chat/completions"
-        combined = f"{system_prompt}\n\n{user_prompt}"
+        combined = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
         payload = {
             "messages": [
                 {"role": "user", "content": combined},
@@ -586,13 +587,22 @@ class PssPipelineSegmenter:
         model_key: str = "gemma-4-e4b",
         threshold_low: float = 0.20,
         threshold_high: float = 0.80,
+        prompt_template_path: Optional[Path] = None,
+        prompt_version: str = "v1_baseline",
         tracer: Optional[PhoenixTracer] = None,
     ):
         self.model_pkl = model_pkl
         self.model_key = model_key
         self.threshold_low = threshold_low
         self.threshold_high = threshold_high
+        self.prompt_template_path = prompt_template_path
+        self.prompt_version = prompt_version
         self.tracer = tracer or PhoenixTracer(enabled=False)
+
+        self.prompt_template: Optional[str] = None
+        if prompt_template_path and Path(prompt_template_path).exists():
+            with open(prompt_template_path, "r", encoding="utf-8") as f:
+                self.prompt_template = f.read()
 
         self.classifier_artifact = None
         if model_pkl.exists():
@@ -789,8 +799,34 @@ class PssPipelineSegmenter:
                 f"Output JSON:"
             )
 
+            if self.prompt_template:
+                rendered = self.prompt_template
+                trans_str = f"Page {from_pg} -> Page {to_pg} (Prior GBDT Split Prob = {p_gbdt:.2f}{exp_meta})"
+                rendered = rendered.replace("{{transition_info}}", trans_str)
+                rendered = rendered.replace("{{prev_lines}}", str(sp["num_lines"]))
+                rendered = rendered.replace("{{prev_bot_ws}}", f"{sp['bottom_whitespace']:.2f}")
+                rendered = rendered.replace("{{prev_closing}}", str(sp["has_closing_trigger"]))
+                rendered = rendered.replace("{{prev_ends_mid_sent}}", str(sp["ends_mid_sentence"]))
+                rendered = rendered.replace("{{prev_top_text}}", repr(sp["top_text"][:350]))
+                rendered = rendered.replace("{{prev_bot_text}}", repr(sp["bottom_text"][:350]))
+                rendered = rendered.replace("{{curr_lines}}", str(sc["num_lines"]))
+                rendered = rendered.replace("{{curr_top_ws}}", f"{sc['top_whitespace']:.2f}")
+                rendered = rendered.replace("{{curr_title_trigger}}", str(sc["has_title_trigger"]))
+                rendered = rendered.replace("{{curr_starts_mid_sent}}", str(sc["starts_mid_sentence"]))
+                rendered = rendered.replace("{{curr_top_text}}", repr(sc["top_text"][:450]))
+                rendered = rendered.replace("{{lex_sim}}", f"{full_sims[i]:.3f}")
+                rendered = rendered.replace("{{hdr_sim}}", f"{hdr_sims[i]:.3f}")
+                rendered = rendered.replace("{{shared_ids}}", str(shared_ids))
+                rendered = rendered.replace("{{prev_only_ids}}", str(prev_only))
+                rendered = rendered.replace("{{curr_only_ids}}", str(curr_only))
+                call_sys = ""
+                call_user = rendered
+            else:
+                call_sys = sys_prompt
+                call_user = user_prompt
+
             t0_llm = time.perf_counter()
-            resp = server.chat(sys_prompt, user_prompt, max_tokens=110)
+            resp = server.chat(call_sys, call_user, max_tokens=150)
             llm_latency = time.perf_counter() - t0_llm
 
             resp_u = resp.upper()
@@ -861,6 +897,7 @@ class PssPipelineSegmenter:
             "packet_id": packet_id,
             "page_prev_num": from_pg,
             "page_curr_num": to_pg,
+            "prompt_version": self.prompt_version,
             "ground_truth": {"is_split": gt_split},
             "prediction": {
                 "is_split": pred_split,
@@ -1100,15 +1137,31 @@ def main():
         default=ROOT_DIR / "results" / "error_traces.jsonl",
         help="Filepath to append granular transition telemetry for error analysis",
     )
+    parser.add_argument(
+        "--prompt",
+        type=Path,
+        default=None,
+        help="Path to custom prompt template file (e.g. prompts/adjudicator_v2_anti_split.txt)",
+    )
+    parser.add_argument(
+        "--prompt-version",
+        type=str,
+        default=None,
+        help="Prompt version tag for telemetry and results export (defaults to template filename or 'v1_baseline')",
+    )
 
     args = parser.parse_args()
 
     is_always_llm = bool(args.always_llm or (args.mode == "llm"))
     mode_str = "LLM-CEILING (ALWAYS-LLM)" if is_always_llm else args.mode.upper()
 
+    prompt_version = args.prompt_version
+    if prompt_version is None:
+        prompt_version = args.prompt.stem if args.prompt else "v1_baseline"
+
     print("=" * 70)
     print("PRODUCTION PAGE STREAM SEGMENTATION & CLASSIFICATION PIPELINE")
-    print(f"Mode: {mode_str} | Model: {args.model} | Device: Local Laptop (RTX 4060 8GB)")
+    print(f"Mode: {mode_str} | Model: {args.model} | Prompt: {prompt_version} | Device: Local Laptop (RTX 4060 8GB)")
     print("=" * 70)
 
     # Initialize Phoenix telemetry
@@ -1123,6 +1176,8 @@ def main():
         model_key=args.model,
         threshold_low=args.threshold_low,
         threshold_high=args.threshold_high,
+        prompt_template_path=args.prompt,
+        prompt_version=prompt_version,
         tracer=tracer,
     )
 
@@ -1239,6 +1294,8 @@ def main():
                 "mode": "llm" if is_always_llm else args.mode,
                 "always_llm": is_always_llm,
                 "model": args.model,
+                "prompt_version": segmenter.prompt_version,
+                "prompt_file": str(args.prompt) if args.prompt else None,
                 "thresholds": {"low": args.threshold_low, "high": args.threshold_high},
                 "total_time_seconds": round(total_time, 2),
                 "metrics": metrics,
