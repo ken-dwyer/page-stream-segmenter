@@ -1,5 +1,5 @@
 {
-  "source_pdf": "C:\\Users\\kdd13\\Projects\\llm-local-bench\\scripts\\test_data\\sample_multi_doc_packet.pdf",
+  "source_pdf": "scripts/test_data/sample_multi_doc_packet.pdf",
   "total_pages": 7,
   "detected_documents_count": 3,
   "mode": "fast",
