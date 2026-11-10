@@ -1,0 +1,226 @@
+{
+  "model": "NuExtract-tiny (Qwen2-0.5B, Q8_0 GGUF)",
+  "vram_mb": 1416.0,
+  "task1_downstream_kie": [
+    {
+      "test_case": "Invoice Key-Value Extraction",
+      "packet_id": "docsplit_mono_seq_invoice_05",
+      "page_num": 1,
+      "latency_sec": 0.663,
+      "tokens_per_sec": 260.7,
+      "is_valid_json": true,
+      "grounding_pct": 100.0,
+      "schema": {
+        "invoice_number": "",
+        "vendor_or_company": "",
+        "billing_date": "",
+        "due_date": "",
+        "total_amount": "",
+        "recipient_or_client": ""
+      },
+      "extracted": {
+        "invoice_number": "12of",
+        "vendor_or_company": "WCVB",
+        "billing_date": "November 2012",
+        "due_date": "11/04/12",
+        "total_amount": "$900.00",
+        "recipient_or_client": "WCVB"
+      }
+    },
+    {
+      "test_case": "Inmate Medication & Medical Treatment Form",
+      "packet_id": "docsplit_mono_seq_form_15",
+      "page_num": 5,
+      "latency_sec": 1.835,
+      "tokens_per_sec": 282.8,
+      "is_valid_json": true,
+      "grounding_pct": 100.0,
+      "schema": {
+        "form_title": "",
+        "institution_or_facility": "",
+        "inmate_or_patient_name": "",
+        "id_number": "",
+        "medical_complaint_or_diagnosis": "",
+        "date": ""
+      },
+      "extracted": {
+        "form_title": "INMATE MEDICATION INFORMATION FORM",
+        "institution_or_facility": "",
+        "inmate_or_patient_name": "",
+        "id_number": "",
+        "medical_complaint_or_diagnosis": "",
+        "date": ""
+      }
+    },
+    {
+      "test_case": "Curriculum Vitae / Resume Extraction",
+      "packet_id": "docsplit_mono_seq_resume_10",
+      "page_num": 1,
+      "latency_sec": 1.843,
+      "tokens_per_sec": 281.5,
+      "is_valid_json": true,
+      "grounding_pct": 80.0,
+      "schema": {
+        "candidate_name": "",
+        "current_job_title": "",
+        "education_institution": "",
+        "degree": "",
+        "skills_or_expertise": []
+      },
+      "extracted": {
+        "candidate_name": "Randall Franke",
+        "current_job_title": "Owner present",
+        "education_institution": "University of Oregon",
+        "degree": "BS",
+        "skills_or_expertise": [
+          "governmental affairs",
+          "non-profit management",
+          "fundraising",
+          "facilitation",
+          "communication",
+          "strategic planning",
+          "advocacy"
+        ]
+      }
+    },
+    {
+      "test_case": "Corporate Memo / Executive Correspondence",
+      "packet_id": "docsplit_mono_seq_memo_07",
+      "page_num": 1,
+      "latency_sec": 1.837,
+      "tokens_per_sec": 280.3,
+      "is_valid_json": true,
+      "grounding_pct": 100.0,
+      "schema": {
+        "sender": "",
+        "recipient": "",
+        "date": "",
+        "subject": "",
+        "action_items_or_summary": ""
+      },
+      "extracted": {
+        "sender": "Patrick A. Duhaney, City Manager",
+        "recipient": "Mayor and Members of Council",
+        "date": "March 3, 2020",
+        "subject": "City of Cincinnati Efforts to Address the Coronavirus",
+        "action_items_or_summary": ""
+      }
+    },
+    {
+      "test_case": "Scientific / Research Article",
+      "packet_id": "docsplit_mono_seq_scientific publication_11",
+      "page_num": 1,
+      "latency_sec": 1.837,
+      "tokens_per_sec": 279.4,
+      "is_valid_json": true,
+      "grounding_pct": 100.0,
+      "schema": {
+        "paper_title": "",
+        "authors": [],
+        "institution_or_journal": "",
+        "publication_date": "",
+        "abstract_summary": ""
+      },
+      "extracted": {
+        "paper_title": "The use of grass as an environmentally friendly additive in water-based drilling \u2013 in water-based drilling \u2013 in water",
+        "authors": [
+          "M. Enamul Hossain",
+          "Mohammed Wajheeuddin"
+        ],
+        "institution_or_journal": "C211",
+        "publication_date": "29 March 2016",
+        "abstract_summary": "Excellent drilling \u2013 in water-based drilling \u2013 in water"
+      }
+    }
+  ],
+  "task2_upstream_pss_discontinuity": [
+    {
+      "transition_name": "Inmate Medication Form (False Negative Rescue)",
+      "packet_id": "docsplit_mono_seq_form_15",
+      "pages": "P4 -> P5",
+      "ground_truth_split": true,
+      "gbdt_prob": 0.0203,
+      "prev_entities": {
+        "document_title": "INSTRUCTIONS FOR LOAN MODIFICATION COMPLAINTS TO THE ATTORNEY GENERAL",
+        "document_id_or_number": "",
+        "organization_or_author": "",
+        "date": ""
+      },
+      "curr_entities": {
+        "document_title": "INMATE MEDICATION INFORMATION FORM",
+        "document_id_or_number": "",
+        "organization_or_author": "",
+        "date": ""
+      },
+      "nuextract_detected_split": true,
+      "is_correct": true,
+      "latency_total_sec": 1.087
+    },
+    {
+      "transition_name": "Invoice Packet Boundary (Different Invoice Split)",
+      "packet_id": "docsplit_mono_seq_invoice_05",
+      "pages": "P3 -> P4",
+      "ground_truth_split": true,
+      "gbdt_prob": 0.1245,
+      "prev_entities": {
+        "document_title": "DUPLICATE",
+        "document_id_or_number": "506710/29-11/4",
+        "organization_or_author": "WCVB",
+        "date": "November 2012"
+      },
+      "curr_entities": {
+        "document_title": "DUPLICATE",
+        "document_id_or_number": "506710/29-11/4",
+        "organization_or_author": "WCVB",
+        "date": "November 2012"
+      },
+      "nuextract_detected_split": false,
+      "is_correct": false,
+      "latency_total_sec": 1.176
+    },
+    {
+      "transition_name": "Same Multi-Page Document Continuation (True Negative)",
+      "packet_id": "docsplit_mono_seq_budget_01",
+      "pages": "P1 -> P2",
+      "ground_truth_split": false,
+      "gbdt_prob": 0.015,
+      "prev_entities": {
+        "document_title": "PROGRAM BUDGET",
+        "document_id_or_number": "",
+        "organization_or_author": "Oasis of Hope Pregnancy and Parenting Support Center",
+        "date": ""
+      },
+      "curr_entities": {
+        "document_title": "Oasis of Hope Pregnancy and Parenting Support Center",
+        "document_id_or_number": "2",
+        "organization_or_author": "",
+        "date": ""
+      },
+      "nuextract_detected_split": true,
+      "is_correct": false,
+      "latency_total_sec": 1.076
+    },
+    {
+      "transition_name": "Resume to Resume Transition (Mono-Seq Split)",
+      "packet_id": "docsplit_mono_seq_resume_10",
+      "pages": "P2 -> P3",
+      "ground_truth_split": true,
+      "gbdt_prob": 0.0812,
+      "prev_entities": {
+        "document_title": "",
+        "document_id_or_number": "",
+        "organization_or_author": "",
+        "date": ""
+      },
+      "curr_entities": {
+        "document_title": "Democratic Candidate for the Sixth Congressional District",
+        "document_id_or_number": "",
+        "organization_or_author": "",
+        "date": ""
+      },
+      "nuextract_detected_split": true,
+      "is_correct": true,
+      "latency_total_sec": 1.085
+    }
+  ]
+}

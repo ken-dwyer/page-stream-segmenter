@@ -1,0 +1,63 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Large LLM Model Binaries (serve locally via llama.cpp)
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/*.onnx
+
+# Benchmark Datasets (Do NOT version large or proprietary evaluation datasets)
+data/*.json
+data/*.jsonl
+data/*.pdf
+data/*.parquet
+data/docsplit*
+data/tabmepp*
+!data/.gitkeep
+
+# Telemetry & Runtime Logs
+.phoenix/
+logs/
+*.log
+results/traces_*.jsonl
+
+# Testing & Promptfoo artifacts
+node_modules/
+.promptfoo/
+promptfoo_output.json
+scratch/patches/
+
+# OS specific
+.DS_Store
+Thumbs.db

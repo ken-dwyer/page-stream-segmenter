@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "page-stream-segmenter"
+version = "0.2.0"
+description = "Cascaded 4-Stage Page Stream Segmentation & Document Boundary Adjudicator Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "pypdf>=4.0.0",
+    "requests>=2.31.0",
+    "arize-phoenix>=4.0.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+]
+
+[project.scripts]
+pss-split = "pss_cli:main"
+pss-pipeline = "pss_pipeline:main"
+pss-bench = "run_pss_benchmark_tournament:main"
+
+[tool.setuptools]
+py-modules = ["pss_pipeline", "pss_cli", "run_pss_benchmark_tournament", "prepare_pss_benchmarks"]
